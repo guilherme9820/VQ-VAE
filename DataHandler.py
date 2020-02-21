@@ -1,5 +1,6 @@
 from six.moves.urllib.request import urlretrieve
 from matplotlib.pyplot import imread
+import tensorflow as tf
 import numpy as np
 import tarfile
 import sys
@@ -8,6 +9,77 @@ import os
 URL = 'https://commondatastorage.googleapis.com/books1000/'
 last_percent_reported = None
 np.random.seed(133)
+
+
+def _bytes_feature(value):
+    """Returns a bytes_list from a string / byte."""
+    if isinstance(value, type(tf.constant(0))):
+        value = value.numpy()  # BytesList won't unpack a string from an EagerTensor.
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+
+def _float_feature(value):
+    """Returns a float_list from a float / double."""
+    return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
+
+
+def _int64_feature(value):
+    """Returns an int64_list from a bool / enum / int / uint."""
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+
+def retrive_image(example_proto):
+    # Create a dictionary describing the features.
+    image_feature_description = {
+        # 'height': tf.io.FixedLenFeature([], tf.int64),
+        # 'width': tf.io.FixedLenFeature([], tf.int64),
+        # 'depth': tf.io.FixedLenFeature([], tf.int64),
+        'label': tf.io.FixedLenFeature([], tf.int64),
+        'image_raw': tf.io.FixedLenFeature([], tf.string),
+    }
+    # Parse the input tf.Example proto using the dictionary above.
+    return tf.io.parse_single_example(example_proto, image_feature_description)
+
+
+def standardize_batch(image_batch):
+
+    epsilon = 1e-7  # To avoid numerical issues
+
+    mean = np.mean(image_batch, axis=1, keepdims=True)
+    stddev = np.std(image_batch, axis=1, keepdims=True)
+
+    return (image_batch - mean) / (stddev + epsilon)
+
+
+def data_generator(tfrecords, batch_size):
+
+    data = tf.data.TFRecordDataset(tfrecords)
+
+    parsed_data = data.map(retrive_image)
+
+    parsed_data = parsed_data.shuffle(buffer_size=256).batch(batch_size).repeat()
+
+    for batch in parsed_data:
+        image_batch = tf.io.decode_raw(batch['image_raw'].numpy(), tf.float32)
+        label_batch = batch['label'].numpy()
+
+        image_batch = standardize_batch(image_batch)
+
+        yield image_batch, label_batch
+
+
+def serialize_image(image, label):
+    """Returns the serialized image"""
+
+    feature = {
+        # 'height': _int64_feature(image.shape[0]),
+        # 'width': _int64_feature(image.shape[1]),
+        # 'depth': _int64_feature(image.shape[2]),
+        'label': _int64_feature(label),
+        'image_raw': _bytes_feature(image.tobytes()),
+    }
+
+    return tf.train.Example(features=tf.train.Features(feature=feature))
 
 
 def download_progress_hook(count, blockSize, totalSize):
