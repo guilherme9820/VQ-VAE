@@ -63,7 +63,7 @@ def data_generator(tfrecords, batch_size):
         image_batch = tf.io.decode_raw(batch['image_raw'].numpy(), tf.float32)
         label_batch = batch['label'].numpy()
 
-        image_batch = standardize_batch(image_batch)
+        image_batch = standardize_batch(image_batch).reshape((-1, 28, 28, 1))
 
         yield image_batch, label_batch
 
