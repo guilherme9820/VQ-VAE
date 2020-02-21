@@ -153,19 +153,15 @@ def load_letter(folder, min_num_images, shape=(28, 28)):
     for image in image_files:
         image_file = os.path.join(folder, image)
         try:
-            image_data = imread(image_file).astype(np.float32)
-            mean = np.mean(image_data)
-            stddev = np.std(image_data)
-            image_data = (image_data - mean) / stddev  # Standardize image
-            # image_data = (ndimage.imread(image_file).astype(float) -
-            #               pixel_depth / 2) / pixel_depth
-            if image_data.shape != shape:
+            image_data = imread(image_file)
+
+            if image_data.shape[:2] != shape:
                 raise Exception(f"Unexpected image shape: {image_data.shape}")
 
             dataset.append(image_data)
 
-        except IOError as e:
-            print(f"Could not read:{image_file}: e- it\'s ok skipping.")
+        except Exception as e:
+            print(f"Could not read:{image_file}: {e}- it\'s ok skipping.")
 
     if len(dataset) < min_num_images:
         raise Exception(f"Many fewer images than expected: {len(dataset)} < {min_num_images}")
@@ -181,17 +177,25 @@ def load_letter(folder, min_num_images, shape=(28, 28)):
 def maybe_tfRecord(data_folders, min_num_images_per_class, force=False):
     dataset_names = []
     for folder in data_folders:
-        set_filename = folder + '.pickle'
+        set_filename = folder + '.tfrecords'
         dataset_names.append(set_filename)
+
         if os.path.exists(set_filename) and not force:
             # You may override by setting force=True.
-            print('%s already present - Skipping pickling.' % set_filename)
+            print(f"{set_filename} already present - Skipping pickling.")
         else:
-            print('Pickling %s.' % set_filename)
+            print(f"Creating {set_filename}.")
             dataset = load_letter(folder, min_num_images_per_class)
+
+            character = folder.split('/')[-1]
+
+            label = ord(character) - 65  # Transform character into a numeric value (0 to 9)
+
             try:
-                with open(set_filename, 'wb') as f:
-                    pickle.dump(dataset, f, pickle.HIGHEST_PROTOCOL)
+                with tf.io.TFRecordWriter(set_filename) as writer:
+                    for image in dataset:
+                        tf_example = serialize_image(image, label)
+                        writer.write(tf_example.SerializeToString())
             except Exception as e:
                 print('Unable to save data to', set_filename, ':', e)
 
